@@ -7,12 +7,13 @@ import com.googlecode.objectify.annotation.Id;
 public class Login {
     @Id Long id;
     byte[] passwordHash;
+    String bcryptHash;
 
     private Login() {}
     
-    public Login(Long id, byte[] passwordHash) {
+    public Login(Long id, String bcryptHash) {
     	this.id = id;
-    	this.passwordHash = passwordHash;
+    	this.bcryptHash = bcryptHash;
     }
 
 	public Long getId() {
@@ -29,5 +30,13 @@ public class Login {
 
 	public void setPasswordHash(byte[] passwordHash) {
 		this.passwordHash = passwordHash;
+	}
+
+	public String getBcryptHash() {
+		return bcryptHash;
+	}
+
+	public void setBcryptHash(String bcryptHash) {
+		this.bcryptHash = bcryptHash;
 	}
 }

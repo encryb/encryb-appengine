@@ -10,6 +10,8 @@ import java.util.List;
 
 import javax.inject.Named;
 
+import org.mindrot.jbcrypt.BCrypt;
+
 import com.encryb.notify.model.AcceptInvite;
 import com.encryb.notify.model.Invite;
 import com.encryb.notify.model.AcceptData;
@@ -33,27 +35,25 @@ public class UserService {
 	
 	@ApiMethod(name = "createProfile")
     public RegistrationData createProfile(
-    		   @Named("userId") Long userId,
     		   @Named("name") String name,
 			   @Named("intro") String intro,
 			   @Named("pictureUrl") String pictureUrl,
 			   @Named("publicKey") String publicKey) {
 		
-		RegistrationData reg = createLogin(userId);
+		RegistrationData reg = createLogin();
 
     	User user = new User(reg.getUserId(), name, intro, pictureUrl, publicKey);
     	ofy().save().entity(user);
 		return reg;
     }
 	
-	private RegistrationData createLogin(Long requestedId) {
+	private RegistrationData createLogin() {
 		final SecureRandom random = new SecureRandom();
 		String password = new BigInteger(130, new SecureRandom()).toString(32);
-	    final byte[] passwordHash = Encryption.encryptSHA512(password);
-		
-	    for (int i = 0; i < 3; i++) {
-    		final long userId = (requestedId != null) ? requestedId:
-    			random.nextInt((MAX_USER - MIN_USER) + 1) + MIN_USER;
+	    for (int i = 0; i < 5; i++) {
+	    	final String bcryptHash = BCrypt.hashpw(password, BCrypt.gensalt());
+	    	
+    		final long userId = random.nextInt((MAX_USER - MIN_USER) + 1) + MIN_USER;
     	
     		Login login = ofy().transact(new Work<Login>() {
     			public Login run() {
@@ -61,7 +61,7 @@ public class UserService {
 	        		if (exitingLogin != null) {
 	        			return null;
 	        		}
-	        		Login newLogin = new Login(userId, passwordHash);
+	        		Login newLogin = new Login(userId, bcryptHash);
 		            
 		            ofy().save().entity(newLogin);
 		            return newLogin;
@@ -103,11 +103,23 @@ public class UserService {
     	if (login == null) {
     		throw new RuntimeException("Incorrect login!");
     	}
+    	// Legacy
+    	if (login.getBcryptHash() == null) {
+			byte[] hash = Encryption.encryptSHA512(password);
+			if (!Arrays.equals(hash, login.getPasswordHash())) {
+				throw new RuntimeException("Incorrect login!");
+			}
+			final String bcryptHash = BCrypt.hashpw(password, BCrypt.gensalt());
+			login.setPasswordHash(null);
+			login.setBcryptHash(bcryptHash);
+			ofy().save().entity(login).now();
+			return;
+    	}
     	
-    	byte[] hash = Encryption.encryptSHA512(password);
-    	if (!Arrays.equals(hash, login.getPasswordHash())) {
+    	if (!BCrypt.checkpw(password, login.getBcryptHash())) {
     		throw new RuntimeException("Incorrect login!");
     	}
+    	
     }
     
     @ApiMethod(name = "invite")
@@ -144,6 +156,8 @@ public class UserService {
     public List<InviteData> getInvites(@Named("id") Long id,
     								   @Named("password") @Nullable String password) {
     	
+		verifyPassword(id, password);
+
     	List<InviteData> response = new LinkedList<InviteData>();
     	Key<User> idKey = Key.create(User.class, id);
 
